@@ -9,14 +9,11 @@ from selenium.webdriver.support import expected_conditions as EC
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
 
-# গতি নিয়ন্ত্রণের কনফিগারেশন
-BATCH_SIZE = 5      # প্রতিবারে ৫টি করে ইমেইল প্রসেস হবে
-WAIT_TIME = 60      # প্রতিটি ব্যাচ শেষে ৬০ সেকেন্ড (১ মিনিট) বিরতি
+BATCH_SIZE = 5      # প্রতিবারে ৫টি ইমেইল
+WAIT_TIME = 60      # ১ মিনিট বিরতি
 
 def get_email_batch(batch_size):
-    """emails.txt থেকে একটি নির্দিষ্ট সংখ্যক ইমেইল নিয়ে আসে এবং ফাইল থেকে সেগুলো মুছে দেয়"""
     if not os.path.exists(EMAILS_FILE):
-        print(f"Error: {EMAILS_FILE} ফাইলটি পাওয়া যায়নি!")
         return []
 
     with open(EMAILS_FILE, "r") as f:
@@ -25,11 +22,9 @@ def get_email_batch(batch_size):
     if not lines:
         return []
 
-    # ব্যাচের ইমেইলগুলো আলাদা করা
     batch = [line.strip() for line in lines[:batch_size] if line.strip()]
     remaining = lines[batch_size:]
 
-    # ফাইল আপডেট করা
     with open(EMAILS_FILE, "w") as f:
         f.writelines(remaining)
 
@@ -41,6 +36,7 @@ def run_github_bot():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
     driver = webdriver.Chrome(options=options)
@@ -49,46 +45,50 @@ def run_github_bot():
     while True:
         emails = get_email_batch(BATCH_SIZE)
         if not emails:
-            print("\n[-] লিস্টের সব জিমেইলের প্রসেস সম্পন্ন হয়েছে!")
+            print("\n[-] লিস্টের সব ইমেইলের কাজ শেষ!")
             break
 
         print(f"\n================ [ Batch {batch_count} ] ================")
-        print(f"[+] Processing {len(emails)} emails...")
 
         for index, email in enumerate(emails, 1):
-            print(f" -> ({index}/{len(emails)}) Trying Email: {email}")
+            print(f" -> ({index}/{len(emails)}) Processing: {email}")
 
             try:
                 driver.get(TARGET_URL)
                 time.sleep(3)
 
-                # Follow Button
-                follow_button = WebDriverWait(driver, 8).until(
+                # ১. মূল পেজের Follow বাটনে ক্লিক করে পপ-আপ আনা
+                main_follow_btn = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]"))
                 )
-                follow_button.click()
+                main_follow_btn.click()
                 time.sleep(2)
 
-                # Email Box Search
-                email_inputs = driver.find_elements(By.XPATH, "//input[@type='email']")
-                if email_inputs:
-                    email_inputs[0].clear()
-                    email_inputs[0].send_keys(email)
-                    time.sleep(1)
+                # ২. পপ-আপের ভেতরে ইমেইল ইনপুট বক্স খুঁজে ইমেইল বসানো
+                email_box = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_dict_or_element((By.XPATH, "//input[@placeholder='Enter your email address' or @type='email']"))
+                )
+                email_box.clear()
+                email_box.send_keys(email)
+                time.sleep(1)
 
-                    submit_btn = driver.find_elements(By.XPATH, "//button[@type='submit']")
-                    if submit_btn:
-                        submit_btn[0].click()
-                        print(f"    [✓] Submitted: {email}")
-                else:
-                    print(f"    [i] Follow-এ ক্লিক হয়েছে (লগইন রিডাইরেক্ট)।")
+                # ৩. পপ-আপের ভেতরের নীল Follow বাটনে ক্লিক করা
+                popup_follow_btn = driver.find_element(By.XPATH, "//div[contains(@class, 'modal') or contains(@class, 'popup') or contains(@class, 'dialog')]//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]")
+                popup_follow_btn.click()
+                print(f"    [✓] Successfully Followed with: {email}")
 
             except Exception as e:
-                print(f"    [X] Failed for {email}: {e}")
+                # বিকল্প পপ-আপ সাবমিট ট্রাই
+                try:
+                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit' or contains(text(), 'Follow')]")
+                    submit_btn.click()
+                    print(f"    [✓] Submitted with backup click: {email}")
+                except Exception as err:
+                    print(f"    [X] Failed for {email}: Element not clickable or Modal issue.")
 
-            time.sleep(2)  # প্রতি ইমেইলের মাঝে ২ সেকেন্ডের ছোট গ্যাপ
+            time.sleep(2)
 
-        print(f"[⏳] ব্যাচ সমাপ্ত। পরবর্তী ব্যাচের জন্য {WAIT_TIME} সেকেন্ড (১ মিনিট) বিরতি নেওয়া হচ্ছে...")
+        print(f"[⏳] ব্যাচ শেষ। {WAIT_TIME} সেকেন্ড বিরতি...")
         time.sleep(WAIT_TIME)
         batch_count += 1
 
