@@ -3,14 +3,16 @@ import os
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
 
-BATCH_SIZE = 5      # প্রতিবারে ৫টি ইমেইল
-WAIT_TIME = 60      # ১ মিনিট বিরতি
+BATCH_SIZE = 5
+WAIT_TIME = 60
 
 def get_email_batch(batch_size):
     if not os.path.exists(EMAILS_FILE):
@@ -39,7 +41,9 @@ def run_github_bot():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    driver = webdriver.Chrome(options=options)
+    # ChromeDriverManager দিয়ে অটো ভার্সন ম্যাচিং
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
 
     batch_count = 1
     while True:
@@ -55,36 +59,30 @@ def run_github_bot():
 
             try:
                 driver.get(TARGET_URL)
-                time.sleep(3)
+                time.sleep(4)
 
-                # ১. মূল পেজের Follow বাটনে ক্লিক করে পপ-আপ আনা
+                # ১. মূল Follow বাটন ক্লিক
                 main_follow_btn = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]"))
                 )
                 main_follow_btn.click()
                 time.sleep(2)
 
-                # ২. পপ-আপের ভেতরে ইমেইল ইনপুট বক্স খুঁজে ইমেইল বসানো
+                # ২. পপ-আপ ইনপুট বক্স
                 email_box = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_dict_or_element((By.XPATH, "//input[@placeholder='Enter your email address' or @type='email']"))
+                    EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Enter your email address' or @type='email']"))
                 )
                 email_box.clear()
                 email_box.send_keys(email)
                 time.sleep(1)
 
-                # ৩. পপ-আপের ভেতরের নীল Follow বাটনে ক্লিক করা
+                # ৩. নীল ফলো বাটন ক্লিক
                 popup_follow_btn = driver.find_element(By.XPATH, "//div[contains(@class, 'modal') or contains(@class, 'popup') or contains(@class, 'dialog')]//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]")
                 popup_follow_btn.click()
                 print(f"    [✓] Successfully Followed with: {email}")
 
             except Exception as e:
-                # বিকল্প পপ-আপ সাবমিট ট্রাই
-                try:
-                    submit_btn = driver.find_element(By.XPATH, "//button[@type='submit' or contains(text(), 'Follow')]")
-                    submit_btn.click()
-                    print(f"    [✓] Submitted with backup click: {email}")
-                except Exception as err:
-                    print(f"    [X] Failed for {email}: Element not clickable or Modal issue.")
+                print(f"    [X] Failed for {email}: {e}")
 
             time.sleep(2)
 
