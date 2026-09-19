@@ -16,12 +16,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    # গিটহাব এনভায়রনমেন্টে অটোমেটিক ক্রোম ব্রাউজার ও ড্রাইভার সেটআপ
-    - name: Setup Chrome
-      uses: browser-actions/setup-chrome@v1
-      with:
-        chrome-version: stable
-
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
