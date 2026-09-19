@@ -1,14 +1,20 @@
-import os
 import time
+import os
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
-BATCH_SIZE = 50
+
+BATCH_SIZE = 5      # প্রতিবারে ৫টি ইমেইল প্রসেস হবে
+WAIT_TIME = 60      # প্রতিটি ব্যাচ শেষে ১ মিনিট বিরতি
 
 def get_email_batch(batch_size):
     if not os.path.exists(EMAILS_FILE):
+        print(f"Error: {EMAILS_FILE} ফাইলটি পাওয়া যায়নি!", flush=True)
         return []
 
     with open(EMAILS_FILE, "r") as f:
@@ -26,7 +32,7 @@ def get_email_batch(batch_size):
     return batch
 
 def run_github_bot():
-    print("[+] Live Count Bot starting...", flush=True)
+    print("[+] Browser শুরু হচ্ছে...", flush=True)
     
     options = Options()
     options.add_argument("--headless=new")
@@ -42,64 +48,45 @@ def run_github_bot():
     while True:
         emails = get_email_batch(BATCH_SIZE)
         if not emails:
-            print("\n[-] List er sob Gmail process shesh!", flush=True)
+            print("\n[-] লিস্টের সব জিমেইলের প্রসেস শেষ!", flush=True)
             break
 
         print(f"\n================ [ Batch {batch_count} ] ================", flush=True)
 
-        # ১. একবার পেজ লোড করে সেশন চালু করা
-        driver.get(TARGET_URL)
-        time.sleep(5)
-
         for index, email in enumerate(emails, 1):
-            print(f" -> ({index}/{len(emails)}) Processing: {email}", flush=True)
+            print(f" -> ({index}/{len(emails)}) Trying Email: {email}", flush=True)
 
             try:
-                # ২. ব্রাউজারের ভেতর থেকে অরিজিনাল UI ইভেন্ট ট্রিগার করা
-                success = driver.execute_script("""
-                    return (async function(userEmail) {
-                        try {
-                            // ১. মূল Follow বাটনটি খুঁজে বের করা
-                            let allBtns = Array.from(document.querySelectorAll('button, div, span'));
-                            let followBtn = allBtns.find(b => b.innerText && b.innerText.trim().toLowerCase().includes('follow'));
-                            if (followBtn) followBtn.click();
+                driver.get(TARGET_URL)
+                time.sleep(4)
 
-                            await new Promise(r => setTimeout(r, 1000));
+                # ১. মূল পেজের Follow বাটন ক্লিক
+                main_follow_btn = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]"))
+                )
+                main_follow_btn.click()
+                time.sleep(2)
 
-                            // ২. ইমেইল ইনপুট বক্সে ভ্যালু সেট করা
-                            let input = document.querySelector('input[type="email"], input[placeholder*="email" i]');
-                            if (!input) return "INPUT_NOT_FOUND";
+                # ২. পপ-আপের ভেতরে ইমেইল ইনপুট বক্স খোঁজা
+                email_box = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@placeholder='Enter your email address' or @type='email']"))
+                )
+                email_box.clear()
+                email_box.send_keys(email)
+                time.sleep(1)
 
-                            input.value = userEmail;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-
-                            await new Promise(r => setTimeout(r, 500));
-
-                            // ৩. পপ-আপের ভেতরের ফাইনাল Follow বাটনটি ক্লিক করা
-                            let modalBtns = Array.from(document.querySelectorAll('.modal button, .popup button, [role="dialog"] button, button'));
-                            let submitBtn = modalBtns.find(b => b.innerText && b.innerText.trim().toLowerCase().includes('follow') && b !== followBtn);
-                            
-                            if (submitBtn) {
-                                submitBtn.click();
-                                return "SUCCESS";
-                            } else {
-                                // বিকল্প হিসেবে Enter key প্রেস ট্রিগার
-                                input.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter', 'keyCode': 13, 'bubbles': true}));
-                                return "SUBMITTED_WITH_ENTER";
-                            }
-                        } catch(err) {
-                            return err.toString();
-                        }
-                    })(arguments[0]);
-                """, email)
-
-                print(f"    [✓] Result for {email}: {success}", flush=True)
-                time.sleep(1.5)
+                # ৩. পপ-আপের ভেতরের ফলো বাটন ক্লিক
+                popup_follow_btn = driver.find_element(By.XPATH, "//div[contains(@class, 'modal') or contains(@class, 'popup') or contains(@class, 'dialog')]//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]")
+                popup_follow_btn.click()
+                print(f"    [✓] Submitted for: {email}", flush=True)
 
             except Exception as e:
-                print(f"    [X] Failed for {email}. Reason: {e}", flush=True)
+                print(f"    [X] Failed for {email}. Error: {e}", flush=True)
 
+            time.sleep(2)
+
+        print(f"[⏳] ব্যাচ শেষ। {WAIT_TIME} সেকেন্ড বিরতি...", flush=True)
+        time.sleep(WAIT_TIME)
         batch_count += 1
 
     driver.quit()
