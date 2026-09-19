@@ -1,7 +1,6 @@
 import os
 import time
 from selenium import webdriver
-from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
@@ -38,7 +37,6 @@ def run_github_bot():
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
     driver = webdriver.Chrome(options=options)
-    driver.implicitly_wait(5)
 
     batch_count = 1
     while True:
@@ -54,36 +52,60 @@ def run_github_bot():
 
             try:
                 driver.get(TARGET_URL)
-                time.sleep(3)  # Indiefy page-er JS bundle execute er jonno safe delay
+                time.sleep(4)  # Page full load er jonno delay
 
-                # 1. Page-er main Follow button click
-                follow_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Follow')]")
-                driver.execute_script("arguments[0].click();", follow_btn)
-                time.sleep(1.5)
+                # 1. Javascript diye main page er Follow button khunja & click
+                clicked_first = driver.execute_script("""
+                    let buttons = Array.from(document.querySelectorAll('button, div, a, span'));
+                    let btn = buttons.find(b => b.innerText && b.innerText.toLowerCase().includes('follow'));
+                    if (btn) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                """)
 
-                # 2. Email input box khunja
-                email_input = driver.find_element(By.XPATH, "//input[@type='email' or contains(@placeholder, 'email')]")
-                email_input.clear()
-                email_input.send_keys(email)
-                time.sleep(0.5)
+                if not clicked_first:
+                    raise Exception("First Follow button missing")
 
-                # 3. Popup er bhitorer submit Follow button click
-                popup_buttons = driver.find_elements(By.XPATH, "//button[contains(text(), 'Follow')] | //div[contains(@class, 'modal') or contains(@class, 'popup')]//*[contains(text(), 'Follow')]")
-                
-                submitted = False
-                for btn in popup_buttons:
-                    if btn != follow_btn:
-                        driver.execute_script("arguments[0].click();", btn)
-                        submitted = True
-                        break
+                time.sleep(2)  # Popup open haoar delay
 
-                if not submitted and len(popup_buttons) > 0:
-                    driver.execute_script("arguments[0].click();", popup_buttons[-1])
+                # 2. Email input box-e email type kora
+                email_filled = driver.execute_script("""
+                    let input = document.querySelector('input[type="email"], input[placeholder*="email" i]');
+                    if (input) {
+                        input.value = arguments[0];
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    }
+                    return false;
+                """, email)
 
-                print(f"    [✓] Submitted for: {email}", flush=True)
+                if not email_filled:
+                    raise Exception("Email input box missing")
+
+                time.sleep(1)
+
+                # 3. Popup modal er bhitorer final Follow button click
+                submitted = driver.execute_script("""
+                    let modal = document.querySelector('.modal, .popup, [role="dialog"]') || document.body;
+                    let modalBtns = Array.from(modal.querySelectorAll('button, div, span'));
+                    let followBtn = modalBtns.find(b => b.innerText && b.innerText.toLowerCase().includes('follow') && b.offsetWidth > 0);
+                    if (followBtn) {
+                        followBtn.click();
+                        return true;
+                    }
+                    return false;
+                """)
+
+                if submitted:
+                    print(f"    [✓] Submitted for: {email}", flush=True)
+                else:
+                    print(f"    [X] Could not click popup submit button for: {email}", flush=True)
 
             except Exception as e:
-                print(f"    [X] Failed for {email}. Reason: {type(e).__name__}", flush=True)
+                print(f"    [X] Failed for {email}. Reason: {e}", flush=True)
 
         batch_count += 1
 
