@@ -1,4 +1,3 @@
-
 import os
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -6,7 +5,7 @@ from selenium.webdriver.chrome.options import Options
 
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
-BATCH_SIZE = 5
+BATCH_SIZE = 50  # দ্রুত প্রসেস করার জন্য ব্যাচ সাইজ বাড়ানো হলো
 
 def get_email_batch(batch_size):
     if not os.path.exists(EMAILS_FILE):
@@ -27,7 +26,7 @@ def get_email_batch(batch_size):
     return batch
 
 def run_github_bot():
-    print("[+] Browser শুরু হচ্ছে...", flush=True)
+    print("[+] Fast Browser শুরু হচ্ছে...", flush=True)
     
     options = Options()
     options.add_argument("--headless=new")
@@ -36,6 +35,14 @@ def run_github_bot():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+    # স্পিড বাড়ানোর জন্য Eager strategy এবং Image/CSS ব্লক করা
+    options.page_load_strategy = 'eager'
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.managed_default_content_settings.stylesheet": 2
+    }
+    options.add_experimental_option("prefs", prefs)
 
     driver = webdriver.Chrome(options=options)
 
