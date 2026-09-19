@@ -1,4 +1,4 @@
-Name: Indiefy Auto Follow Bot
+name: Indiefy Auto Follow Bot
 
 on:
   workflow_dispatch:
