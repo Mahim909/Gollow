@@ -1,11 +1,14 @@
 import os
+import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
-BATCH_SIZE = 50  # দ্রুত প্রসেস করার জন্য ব্যাচ সাইজ বাড়ানো হলো
+BATCH_SIZE = 50
 
 def get_email_batch(batch_size):
     if not os.path.exists(EMAILS_FILE):
@@ -26,7 +29,7 @@ def get_email_batch(batch_size):
     return batch
 
 def run_github_bot():
-    print("[+] Fast Browser শুরু হচ্ছে...", flush=True)
+    print("[+] Browser শুরু হচ্ছে...", flush=True)
     
     options = Options()
     options.add_argument("--headless=new")
@@ -36,15 +39,14 @@ def run_github_bot():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    # স্পিড বাড়ানোর জন্য Eager strategy এবং Image/CSS ব্লক করা
-    options.page_load_strategy = 'eager'
+    # CSS এবং JS ঠিকমতো লোড হতে দিতে হবে
     prefs = {
-        "profile.managed_default_content_settings.images": 2,
-        "profile.managed_default_content_settings.stylesheet": 2
+        "profile.managed_default_content_settings.images": 2  # শুধু ইমেজ বন্ধ রাখা হলো স্পিডের জন্য
     }
     options.add_experimental_option("prefs", prefs)
 
     driver = webdriver.Chrome(options=options)
+    wait = WebDriverWait(driver, 10)
 
     batch_count = 1
     while True:
@@ -61,46 +63,30 @@ def run_github_bot():
             try:
                 driver.get(TARGET_URL)
 
-                # ১. JavaScript দিয়ে সকল Follow বাটন খুঁজে ক্লিক করা
-                buttons = driver.find_elements(By.TAG_NAME, "button")
-                follow_btn = None
-                for btn in buttons:
-                    if "follow" in btn.text.lower():
-                        follow_btn = btn
-                        break
+                # ১. প্রথম 'Follow' বাটন খুঁজে ক্লিক করা (১ম স্ক্রিনশট)
+                follow_btn = wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//*[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')]"))
+                )
+                driver.execute_script("arguments[0].click();", follow_btn)
 
-                if follow_btn:
-                    driver.execute_script("arguments[0].click();", follow_btn)
-                else:
-                    print("    [!] Follow বাটন খুঁজে পাওয়া যায়নি (Cloudflare Block হতে পারে)।", flush=True)
-                    continue
+                # ২. পপ-আপের ইমেইল ইনপুট বক্স আসা পর্যন্ত অপেক্ষা করা (২য় স্ক্রিনশট)
+                email_input = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@type='email' or contains(@placeholder, 'email')]"))
+                )
+                email_input.clear()
+                email_input.send_keys(email)
 
-                # ২. ইমেইল ইনপুট বক্স খোঁজা
-                email_inputs = driver.find_elements(By.XPATH, "//input")
-                target_input = None
-                for inp in email_inputs:
-                    inp_type = inp.get_attribute("type")
-                    inp_ph = inp.get_attribute("placeholder") or ""
-                    if inp_type == "email" or "email" in inp_ph.lower():
-                        target_input = inp
-                        break
+                # ৩. পপ-আপের ভেতরের ফাইনাল 'Follow' বাটন খুঁজে ক্লিক করা
+                # পপ-আপ মোডালের ভেতরের সাবমিট বাটন নির্ধারণ
+                submit_btn = wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(translate(text(), 'FOLLOW', 'follow'), 'follow')] | //div[contains(@class, 'modal') or contains(@class, 'popup')]//*[contains(text(), 'Follow')]"))
+                )
+                driver.execute_script("arguments[0].click();", submit_btn)
 
-                if target_input:
-                    target_input.clear()
-                    target_input.send_keys(email)
-
-                    # ৩. পপ-আপের ভেতরে থাকা সাবমিট/ফলো বাটন খুঁজে ক্লিক করা
-                    sub_buttons = driver.find_elements(By.TAG_NAME, "button")
-                    for s_btn in sub_buttons:
-                        if "follow" in s_btn.text.lower() and s_btn != follow_btn:
-                            driver.execute_script("arguments[0].click();", s_btn)
-                            print(f"    [✓] Submitted for: {email}", flush=True)
-                            break
-                else:
-                    print(f"    [!] ইমেইল ইনপুট বক্স পপ-আপে পাওয়া যায়নি।", flush=True)
+                print(f"    [✓] Successfully Followed & Submitted for: {email}", flush=True)
 
             except Exception as e:
-                print(f"    [X] Failed for {email}. Exception: {type(e).__name__}", flush=True)
+                print(f"    [X] Failed for {email}. Reason: {type(e).__name__}", flush=True)
 
         batch_count += 1
 
