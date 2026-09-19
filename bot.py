@@ -1,9 +1,9 @@
 import os
 import time
-import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
-ARTIST_ID = "mahinur-rahman-saif"
-API_URL = "https://indiefy.me/api/followers/subscribe" # Indiefy-er subscription endpoint
+TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
 BATCH_SIZE = 50
 
@@ -25,18 +25,18 @@ def get_email_batch(batch_size):
 
     return batch
 
-def run_api_bot():
-    print("[+] Direct API Bot started...", flush=True)
+def run_github_bot():
+    print("[+] Live Count Bot starting...", flush=True)
+    
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    # Browser emulating headers
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/json",
-        "Origin": "https://indiefy.me",
-        "Referer": f"https://indiefy.me/{ARTIST_ID}"
-    }
-
-    session = requests.Session()
+    driver = webdriver.Chrome(options=options)
 
     batch_count = 1
     while True:
@@ -47,34 +47,62 @@ def run_api_bot():
 
         print(f"\n================ [ Batch {batch_count} ] ================", flush=True)
 
-        for index, email in enumerate(emails, 1):
-            print(f" -> ({index}/{len(emails)}) Trying Email: {email}", flush=True)
+        # ১. একবার পেজ লোড করে সেশন চালু করা
+        driver.get(TARGET_URL)
+        time.sleep(5)
 
-            payload = {
-                "artist": ARTIST_ID,
-                "email": email
-            }
+        for index, email in enumerate(emails, 1):
+            print(f" -> ({index}/{len(emails)}) Processing: {email}", flush=True)
 
             try:
-                # Direct API Call
-                response = session.post("https://indiefy.me/api/subscribe", json=payload, headers=headers, timeout=10)
-                
-                if response.status_code in [200, 201]:
-                    print(f"    [✓] Successfully Followed: {email}", flush=True)
-                else:
-                    # Fallback endpoint try
-                    alt_resp = session.post(f"https://indiefy.me/api/artists/{ARTIST_ID}/follow", json={"email": email}, headers=headers, timeout=10)
-                    if alt_resp.status_code in [200, 201]:
-                        print(f"    [✓] Successfully Followed (Alt): {email}", flush=True)
-                    else:
-                        print(f"    [✓] Submitted request for: {email} (Status: {response.status_code})", flush=True)
+                # ২. ব্রাউজারের ভেতর থেকে অরিজিনাল UI ইভেন্ট ট্রিগার করা
+                success = driver.execute_script("""
+                    return (async function(userEmail) {
+                        try {
+                            // ১. মূল Follow বাটনটি খুঁজে বের করা
+                            let allBtns = Array.from(document.querySelectorAll('button, div, span'));
+                            let followBtn = allBtns.find(b => b.innerText && b.innerText.trim().toLowerCase().includes('follow'));
+                            if (followBtn) followBtn.click();
+
+                            await new Promise(r => setTimeout(r, 1000));
+
+                            // ২. ইমেইল ইনপুট বক্সে ভ্যালু সেট করা
+                            let input = document.querySelector('input[type="email"], input[placeholder*="email" i]');
+                            if (!input) return "INPUT_NOT_FOUND";
+
+                            input.value = userEmail;
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+
+                            await new Promise(r => setTimeout(r, 500));
+
+                            // ৩. পপ-আপের ভেতরের ফাইনাল Follow বাটনটি ক্লিক করা
+                            let modalBtns = Array.from(document.querySelectorAll('.modal button, .popup button, [role="dialog"] button, button'));
+                            let submitBtn = modalBtns.find(b => b.innerText && b.innerText.trim().toLowerCase().includes('follow') && b !== followBtn);
+                            
+                            if (submitBtn) {
+                                submitBtn.click();
+                                return "SUCCESS";
+                            } else {
+                                // বিকল্প হিসেবে Enter key প্রেস ট্রিগার
+                                input.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter', 'keyCode': 13, 'bubbles': true}));
+                                return "SUBMITTED_WITH_ENTER";
+                            }
+                        } catch(err) {
+                            return err.toString();
+                        }
+                    })(arguments[0]);
+                """, email)
+
+                print(f"    [✓] Result for {email}: {success}", flush=True)
+                time.sleep(1.5)
 
             except Exception as e:
                 print(f"    [X] Failed for {email}. Reason: {e}", flush=True)
 
-            time.sleep(0.5) # Fast delay
-
         batch_count += 1
 
+    driver.quit()
+
 if __name__ == "__main__":
-    run_api_bot()
+    run_github_bot()
