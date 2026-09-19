@@ -9,7 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 TARGET_URL = "https://indiefy.me/mahinur-rahman-saif"
 EMAILS_FILE = "emails.txt"
 
-BATCH_SIZE = 5
+BATCH_SIZE = 590
 WAIT_TIME = 60
 
 def get_email_batch(batch_size):
